@@ -1,0 +1,193 @@
+---
+title: "Prediction"
+author: "Elizabeth"
+date: "May 4, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#Background to make the Project
+##1. Context
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+##2. Data Sources (Train and Test)
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har.
+
+If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+##3. What you should submit
+The goal of your project is to predict the manner in which they did the exercise. This is the “classe” variable in the training set. You may use any of the other variables to predict with. You should create a report describing:
+
+how you built your model
+how you used cross validation
+what you think the expected out of sample error is
+why you made the choices you did.
+You will also use your prediction model to predict 20 different test cases.
+
+Reproducibility (Warning)
+Due to security concerns with the exchange of R code, your code will not be run during the evaluation by your classmates. Please be sure that if they download the repo, they will be able to view the compiled HTML version of your analysis.
+
+Forwards to the solution
+##a. How you built your model
+We begin recognizing the outcome variable classe, a factor variable.
+
+In the “Weight Lifting Exercises Dataset” section is described the following text: “Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions:
+
+Class A - exactly according to the specification
+Class B - throwing the elbows to the front
+Class C - lifting the dumbbell only halfway
+Class D - lowering the dumbbell only halfway
+Class E - throwing the hips to the front
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. Participants were supervised by an experienced weight lifter to make sure the execution complied to the manner they were supposed to simulate. The exercises were performed by six male participants aged between 20-28 years, with little weight lifting experience. We made sure that all participants could easily simulate the mistakes in a safe and controlled manner by using a relatively light dumbbell (1.25kg)."
+
+In order to achieve the aim of this projec, two models will be tested using the following ML algorithms: decision tree and random forest. These algorithms are known for their ability of detecting the features that are important for classification (Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human ’13) . Stuttgart, Germany: ACM SIGCHI, 2013.)
+
+##b. Cross-Validation
+The model with the highest accuracy will be chosen as the final model. Therefore, the cross-validation will be performed by subsampling our training data set randomly without replacement into 2 subsamples: - subTraining data (75% of the original Training data set) - subTesting data (25%). Models will be fitted on the subTraining data set, and tested on the subTesting data. Once the most accurate model is choosen, it will be tested on the original Testing data set.
+
+##c. Expected out-of-sample error
+The expected out-of-sample error will correspond to the quantity: 1-accuracy in the cross-validation data. The variable “classe” is an unordered factor variable, therefore, it is possible can choose the error type as 1-accuracy.
+
+Accuracy is the proportion of correct classified observation over the total sample in the subTesting data set. Expected accuracy is the expected accuracy in the original testing dataset. Thus, 1-accuracy found from the cross-validation data set will be the expected value of the out-of-sample error which will correspond to the expected number of missclassified observations/total observations in the Test data set.
+
+We have a large sample size with N= 19622 in the Training data set. This allow us to divide our Training sample into subTraining and subTesting to allow cross-validation. It is possible having in count: - Features with all missing values will be discarded as well as features that are irrelevant. - All other features will be treated as relevant variables.
+
+##d.Explanations for the choices that we did
+Preparing Environment
+
+
+```{r}
+library(caret)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+```
+Preparing Data set
+Getting data from original sources.
+
+```{r}
+#Training Data set
+traindatasource <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+datatraining <- read.csv(url(traindatasource), na.strings=c("NA","#DIV/0!",""))
+#Testing Data set
+testdatasource <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+datatesting <- read.csv(url(testdatasource), na.strings=c("NA","#DIV/0!",""))
+```
+
+Cleaning and Partioning Data
+We do several transformations in order to clean the data:
+
+```{r}
+# Transformation 1: Delete columns with all missing values
+datatraining<-datatraining[,colSums(is.na(datatraining)) == 0]
+datatesting <-datatesting[,colSums(is.na(datatesting)) == 0]
+
+# Transformation 2: Delete variables are irrelevant to the project: 
+# user_name, raw_timestamp_part_1, raw_timestamp_part_,2 cvtd_timestamp, new_window, and  num_window (columns 1 to 7). 
+datatraining   <-datatraining[,-c(1:7)]
+datatesting <-datatesting[,-c(1:7)]
+
+# Partioning the training set into two
+#We have partioned the training data set as following: 60% for parttrain, 40% for parttest.
+theTraining <- createDataPartition(y=datatraining$classe, p=0.60, list=FALSE)
+#Training Data set
+partrain <- datatraining[theTraining, ]
+dim(partrain);
+
+#Testing Data set
+partest <- datatraining[-theTraining, ]
+dim(partest)
+```
+
+
+
+```{r}
+#3. Transformation 3: Cleaning NearZeroVariance Variables 
+cleanDataNZVTrain <- nearZeroVar(partrain, saveMetrics=TRUE)
+NZVvars <- names(partrain) %in% c("new_window", "kurtosis_roll_belt", "kurtosis_picth_belt",
+"kurtosis_yaw_belt", "skewness_roll_belt", "skewness_roll_belt.1", "skewness_yaw_belt",
+"max_yaw_belt", "min_yaw_belt", "amplitude_yaw_belt", "avg_roll_arm", "stddev_roll_arm",
+"var_roll_arm", "avg_pitch_arm", "stddev_pitch_arm", "var_pitch_arm", "avg_yaw_arm",
+"stddev_yaw_arm", "var_yaw_arm", "kurtosis_roll_arm", "kurtosis_picth_arm",
+"kurtosis_yaw_arm", "skewness_roll_arm", "skewness_pitch_arm", "skewness_yaw_arm",
+"max_roll_arm", "min_roll_arm", "min_pitch_arm", "amplitude_roll_arm", "amplitude_pitch_arm",
+"kurtosis_roll_dumbbell", "kurtosis_picth_dumbbell", "kurtosis_yaw_dumbbell", "skewness_roll_dumbbell",
+"skewness_pitch_dumbbell", "skewness_yaw_dumbbell", "max_yaw_dumbbell", "min_yaw_dumbbell",
+"amplitude_yaw_dumbbell", "kurtosis_roll_forearm", "kurtosis_picth_forearm", "kurtosis_yaw_forearm",
+"skewness_roll_forearm", "skewness_pitch_forearm", "skewness_yaw_forearm", "max_roll_forearm",
+"max_yaw_forearm", "min_roll_forearm", "min_yaw_forearm", "amplitude_roll_forearm",
+"amplitude_yaw_forearm", "avg_roll_forearm", "stddev_roll_forearm", "var_roll_forearm",
+"avg_pitch_forearm", "stddev_pitch_forearm", "var_pitch_forearm", "avg_yaw_forearm",
+"stddev_yaw_forearm", "var_yaw_forearm")
+
+partrain <- partrain[!NZVvars]
+dim(partrain)
+
+
+#Testing
+cln1 <- colnames(partrain)
+cln2 <- colnames(partrain[, -58]) #classe column has been doneremoved
+partest <- partest[cln1]
+dim(partest)
+
+
+#datatesting <- datatesting[cln2]
+#dim(datatesting)
+```
+##Using ML algorithms for prediction: Decision Tree
+```{r}
+tree1 <- rpart(classe ~ ., data=partrain, method="class")
+#To view the decision tree with fancy :
+fancyRpartPlot(tree1)
+
+prediction1 <- predict(tree1, partrain, type = "class")
+confusionMatrix(prediction1, partrain$classe)
+```
+
+Using ML algorithms for prediction: Random Forests
+```{r}
+tree2 <- randomForest(classe ~. , data=partrain)
+
+#Predicting in-sample error:
+
+prediction2 <- predict(tree2, partest, type = "class")
+
+#Using confusion Matrix to test results:
+
+confusionMatrix(prediction2, partest$classe)
+```
+Random Forest performed better than Decision Trees algorithm. The accuracy for Random Forest model was 0.9935 (95% CI : (0.9915, 0.9952)) compared to Decision Tree model with 0.7523 (95% CI : (0.7444, 0.7601). The Random Forests model is choosen. The expected out-of-sample error is estimated at 0.005, or 0.5%.
+
+#Outcome Files to submit as answers
+Using the provided Test Set out-of-sample error.
+Having in account Random Forests, we use the following formula which yielded a much better prediction in in-sample.
+
+```{r}
+prediction3 <- predict(tree2, datatesting, type = "class")
+prediction3
+#Function to generate files with predictions to submit for assignment
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(prediction3)
+```
+
+
